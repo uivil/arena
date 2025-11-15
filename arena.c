@@ -73,3 +73,88 @@ size_t arena_remaining(Arena *arena) {
     }
     return arena->capacity - arena->offset;
 }
+
+//==============================================================================
+// Temporary Arena Pattern Implementation
+//==============================================================================
+
+ArenaTemp arena_temp_begin(Arena *arena) {
+    ArenaTemp temp = {0};
+    if (arena != NULL) {
+        temp.arena = arena;
+        temp.saved_offset = arena->offset;
+    }
+    return temp;
+}
+
+void arena_temp_end(ArenaTemp temp) {
+    if (temp.arena != NULL) {
+        // Restore the arena to its saved state
+        temp.arena->offset = temp.saved_offset;
+    }
+}
+
+//==============================================================================
+// Scratch Arena System Implementation
+//==============================================================================
+
+#include <pthread.h>
+
+// Thread-local storage for scratch arenas
+static __thread Arena scratch_arenas[MAX_SCRATCH_ARENAS] = {0};
+static __thread int scratch_initialized = 0;
+static size_t scratch_arena_size = 0;
+
+void scratch_init(size_t arena_size) {
+    scratch_arena_size = arena_size;
+}
+
+static void ensure_scratch_initialized(void) {
+    if (!scratch_initialized && scratch_arena_size > 0) {
+        for (int i = 0; i < MAX_SCRATCH_ARENAS; i++) {
+            scratch_arenas[i] = arena_create(scratch_arena_size);
+        }
+        scratch_initialized = 1;
+    }
+}
+
+ArenaTemp scratch_begin(Arena **conflicts, size_t conflict_count) {
+    ensure_scratch_initialized();
+
+    // Find a scratch arena that doesn't conflict with any in the conflicts array
+    for (int i = 0; i < MAX_SCRATCH_ARENAS; i++) {
+        Arena *candidate = &scratch_arenas[i];
+
+        // Check if this arena conflicts with any in the conflicts array
+        int has_conflict = 0;
+        for (size_t j = 0; j < conflict_count; j++) {
+            if (conflicts[j] == candidate) {
+                has_conflict = 1;
+                break;
+            }
+        }
+
+        // If no conflict, use this arena
+        if (!has_conflict) {
+            return arena_temp_begin(candidate);
+        }
+    }
+
+    // If we get here, all arenas are in use (this shouldn't happen with proper usage)
+    assert(0 && "All scratch arenas are in use - increase MAX_SCRATCH_ARENAS or fix nesting");
+    ArenaTemp temp = {0};
+    return temp;
+}
+
+void scratch_end(ArenaTemp temp) {
+    arena_temp_end(temp);
+}
+
+void scratch_cleanup(void) {
+    if (scratch_initialized) {
+        for (int i = 0; i < MAX_SCRATCH_ARENAS; i++) {
+            arena_destroy(&scratch_arenas[i]);
+        }
+        scratch_initialized = 0;
+    }
+}

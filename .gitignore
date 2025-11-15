@@ -1,0 +1,21 @@
+# Compiled binaries
+example
+example_temp_pattern
+example_scratch_arenas
+example_parser
+example_per_frame
+example_advanced_patterns
+
+# Object files
+*.o
+
+# Editor and IDE files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
